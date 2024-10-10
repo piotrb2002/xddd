@@ -31,7 +31,7 @@ prettyplot_for_one <- function(survival_for_the_plot, x_max = 60,
   tunit <- ifelse(years, 12, 1)
   survival_percent <- round((summary(survival_for_the_plot, vertlines))[[6]]*100, 1)
   median <- read.table(textConnection(capture.output(survival_for_the_plot)),skip=2,header=TRUE)$median
-  datalength <- 1+length(unique(survival_for_the_plot$time))
+  datalength <- nrow(tidy_survfit(survival_for_the_plot))
 
   plot <-  ggsurvfit(survival_for_the_plot, linewidth=1.25, color = plotcol)+
 
