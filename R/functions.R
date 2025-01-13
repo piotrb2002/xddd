@@ -26,11 +26,11 @@ prettyplot_for_one <- function(survival_for_the_plot, x_max = 60,
                                survivaltitle_suffix=NULL, years=TRUE,
                                x_intervals=12, vertlinescol='grey',
                                annotateshift=12, textsize=16,
-                               cens_size=3.5){
-
+                               cens_size=3.5, ci=FALSE){
+  library(survminer)
   tunit <- ifelse(years, 12, 1)
   survival_percent <- round((summary(survival_for_the_plot, vertlines))[[6]]*100, 1)
-  median <- read.table(textConnection(capture.output(survival_for_the_plot)),skip=2,header=TRUE)$median
+  median <- round(surv_median(survival_for_the_plot)$median,1)
   datalength <- nrow(tidy_survfit(survival_for_the_plot))
 
   plot <-  ggsurvfit(survival_for_the_plot, linewidth=1.25, color = plotcol)+
@@ -42,6 +42,7 @@ prettyplot_for_one <- function(survival_for_the_plot, x_max = 60,
       expand = c(0.01, 0))+
 
     add_censor_mark(size = cens_size, shape = "|", color = plotcol)+
+    {if(ci)add_confidence_interval(type = 'ribbon')}+
 
     scale_x_continuous(breaks = seq(0, x_max, by = x_intervals),
                        limits = c(0, NA),
@@ -89,7 +90,7 @@ pretty_plot_for2 <- function(time, status, var, survivaltitle,
                              plotxlab, survivaltitle_suffix = NULL,
                              x_max = 60, legend_tit='Legend', curve1name='A',
                              curve2name='B',curve3name='C', curve4name='D',
-                             curve1col='#963480',curve2col='#9cb640',
+                             curve1col='#963480',curve2col='#9cb640', ci=FALSE,
                              curve3col='blue', curve4col='red', x_intervals=12,
                              years=TRUE, cens_size=3.5, textsize=16,add_pvalue=TRUE
 ){
@@ -110,6 +111,7 @@ pretty_plot_for2 <- function(time, status, var, survivaltitle,
       expand = c(0.01, 0))+
 
     add_censor_mark(size = cens_size, shape = "|")+
+    {if(ci)add_confidence_interval(type = 'ribbon')}+
 
     scale_x_continuous(breaks = seq(0, x_max, by = x_intervals),
                        limits = c(0, NA),
@@ -150,19 +152,124 @@ tb <- function(x, name, sort=TRUE, pick=NA){
   }
 }
 
-
-tbcon <- function(x, name, range=TRUE){
+tbcon <- function(x, name, range=TRUE, mean=FALSE){
   rbind(data.frame(variable=paste('**',name, '**', sep=''), n=''),
+        if(mean){
+          data.frame(variable='Mean (SD)',
+                     n=paste(round(mean(x, na.rm=TRUE),2), ' (',
+                             round(sd(x),2), ')', sep=''))}else{
         if(range){
          data.frame(variable='Median (range)',
-         n=paste(median(x, na.rm=TRUE), ' (',
-                 min(x, na.rm=TRUE), ' - ',
-                 max(x, na.rm=TRUE), ')', sep=''))}else{
+         n=paste(round(median(x, na.rm=TRUE),2), ' (',
+                 round(min(x, na.rm=TRUE),2), ' - ',
+                 round(max(x, na.rm=TRUE),2), ')', sep=''))}else{
          data.frame(variable='Median (IQR)',
-                    n=paste(median(x, na.rm=TRUE), ' (',
-                            quantile(x, 0.25), ' - ',
-                            quantile(x, 0.75), ')', sep=''))})
+                    n=paste(round(median(x, na.rm=TRUE),2), ' (',
+                            round(quantile(x, 0.25),2), ' - ',
+                            round(quantile(x, 0.75),2), ')', sep=''))}})
 
+}
+
+fisherizer <- function(df, x, y, name='Name', bold=TRUE, chisq=FALSE, rmp=FALSE){
+  library(dplyr)
+  df0 <- df[df[,y]==0,]
+  df1 <- df[df[,y]==1,]
+  df2 <- df
+
+  x2 <- as.data.frame(table(df2[,x]))
+  x1 <- as.data.frame(table(df1[,x]))
+  x0 <- as.data.frame(table(df0[,x]))
+  result <- merge(x2, x1, all.x = TRUE, all.y = TRUE, by.x = 'Var1', by.y = 'Var1')
+  result <- merge(result, x0, all.x = TRUE, all.y = TRUE, by.x = 'Var1', by.y = 'Var1')
+  result[is.na(result)] <- 0
+
+  p <- ifelse(chisq, chisq.test(result[,3:4])[[3]], fisher.test(result[,3:4])[[1]])
+  p <- round(p, 5)
+
+  if(bold){
+    p <- paste(ifelse(p<0.05, '**', ''), p, ifelse(p<0.05, '**', ''), sep='')
+  }
+
+  p <- ifelse(rmp, ' ', p)
+
+  result <- cbind(result, c(rep('', times=nrow(result)-1),p))
+  result <- result %>% mutate(Freq.x=paste(Freq.x, ' (', round(100*Freq.x/sum(result$Freq.x),1), '%)',sep=''),
+                              Freq.y=paste(Freq.y, ' (', round(100*Freq.y/sum(result$Freq.y),1), '%)',sep=''),
+                              Freq=paste(Freq, ' (', round(100*Freq/sum(result$Freq),1), '%)',sep=''))
+
+  colnames(result) <- c('value', 'All', paste(y,'=1'), paste(y,'=0'), 'p-value')
+
+  remove(df0, df1, df2, x0, x1, x2)
+  nam <- t(data.frame(c(paste('**',name, '**', sep=''),rep('',4))))
+  colnames(nam) <- colnames(result)
+  rbind(nam,result)
+
+}
+
+wilcoxinator <- function(df, x, by, name='Name', bold=TRUE, range=FALSE, round=2){
+  library(dplyr)
+  df0 <- df[df[,by]==0,]
+  df1 <- df[df[,by]==1,]
+
+  x2 <- na.omit(df[,x])
+  x0 <- na.omit(df0[,x])
+  x1 <- na.omit(df1[,x])
+
+  wil <- wilcox.test(x0, x1)[[3]]
+  wil <- round(wil,5)
+  if(bold){
+    wil <- paste(ifelse(wil<0.05, '**', ''), wil, ifelse(wil<0.05, '**', ''), sep='')
+  }
+
+  rnd <- function(x){round(x, round)}
+
+result <- list(data.frame('value'= 'median (range)',
+                            'All'=paste(median(x2) %>% rnd,
+                                        ' (',
+                                        min(x2) %>% rnd,
+                                        '-',
+                                        max(x2) %>% rnd,
+                                        ')',sep=''),
+                            'by+'=paste(median(x1) %>% rnd,
+                                       ' (',
+                                       min(x1) %>% rnd,
+                                       '-',
+                                       max(x1) %>% rnd,
+                                       ')',sep=''),
+                            'by-'=paste(median(x0) %>% rnd,
+                                       ' (',
+                                       min(x0) %>% rnd,
+                                       '-',
+                                       max(x0) %>% rnd,
+                                       ')',sep=''),
+                            'pvalue'=wil),
+                 data.frame('value'='median (IQR)',
+                            'All'=paste(median(x2) %>% rnd,
+                                        ' (',
+                                        quantile(x2, 0.25) %>% rnd,
+                                        '-',
+                                        quantile(x2, 0.75) %>% rnd,
+                                        ')',sep=''),
+                            'by+'=paste(median(x1) %>% rnd,
+                                       ' (',
+                                       quantile(x1, 0.25) %>% rnd,
+                                       '-',
+                                       quantile(x1, 0.75) %>% rnd,
+                                       ')',sep=''),
+                            'by-'=paste(median(x0) %>% rnd,
+                                       ' (',
+                                       quantile(x0, 0.25) %>% rnd,
+                                       '-',
+                                       quantile(x0, 0.75) %>% rnd,
+                                       ')',sep=''),
+                            'pvalue'=wil)
+                 )[[2-range]]
+
+   colnames(result) <- c('value', 'All', paste(by,'=1'), paste(by,'=0'), 'p-value')
+   remove(df0, df1, x0, x1, x2)
+   nam <- t(data.frame(c(paste('**',name, '**', sep=''),rep('',4))))
+   colnames(nam) <- colnames(result)
+   rbind(nam,result)
 }
 
 # Modified swimplot::swimmer_plot
