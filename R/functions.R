@@ -140,9 +140,9 @@ pretty_plot_for2 <- function(time, status, var, survivaltitle,
   plot
 }
 
-tb <- function(x, name, sort=TRUE, pick=NA){
+tb <- function(x, name, sort=TRUE, pick=NA, useNA='ifany'){
   library(dplyr)
-  d <- data.frame(table(x), stringsAsFactors = FALSE) %>%
+  d <- data.frame(table(x, useNA=useNA), stringsAsFactors = FALSE) %>%
     `colnames<-`(c('variable', 'n'))
   if(sort){d <- sb(d,'n', decreasing = TRUE)}
   d <- d %>% mutate(n=paste(n, ' (', round(100*n/length(x),1), '%)',sep=''))
