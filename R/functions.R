@@ -378,6 +378,7 @@ ggforest_piotra <- function (model, label_map, data = NULL, main = "Hazard ratio
   gmodel <- glance(model)
   allTerms <- lapply(seq_along(terms), function(i) {
     var <- names(terms)[i]
+    if(var %in% colnames(data)) {
     if (terms[i] %in% c("factor", "character")) {
       adf <- as.data.frame(table(data[, var]))
       cbind(var = var, adf, pos = 1:nrow(adf))
@@ -391,6 +392,9 @@ ggforest_piotra <- function (model, label_map, data = NULL, main = "Hazard ratio
       data.frame(var = vars, Var1 = "", Freq = nrow(data),
                  pos = seq_along(vars))
     }
+  } else {
+    message(var, "is not found in data columns, and will be skipped.")
+  }
   })
   allTermsDF <- do.call(rbind, allTerms)
   colnames(allTermsDF) <- c("var", "level", "N", "pos")
